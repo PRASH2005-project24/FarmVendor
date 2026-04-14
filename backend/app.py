@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import logging
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from mysql.connector import pooling
 
@@ -12,8 +12,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # ─── App Setup ───────────────────────────────────────────
-app = Flask(__name__)
-CORS(app, origins=['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'])
+# Serve React build from frontend/dist in production
+static_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist')
+app = Flask(__name__, static_folder=static_folder, static_url_path='')
+CORS(app, origins=['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', '*'])
 
 # ─── Database Connection Pool ────────────────────────────
 db_config = {
@@ -67,6 +69,9 @@ def gen_id(prefix, table):
 
 @app.route('/')
 def home():
+    # Serve React app in production, API info in dev
+    if os.path.exists(os.path.join(static_folder, 'index.html')):
+        return send_from_directory(static_folder, 'index.html')
     return jsonify({"status": "ok", "message": "Farmer Vendor Management System API 🌾"})
 
 
@@ -501,6 +506,10 @@ def delete_harvest(harvest_id):
 
 @app.errorhandler(404)
 def not_found(e):
+    # For non-API routes, serve React app (client-side routing)
+    if not request.path.startswith('/api/'):
+        if os.path.exists(os.path.join(static_folder, 'index.html')):
+            return send_from_directory(static_folder, 'index.html')
     return jsonify({"error": "Route not found"}), 404
 
 @app.errorhandler(500)
