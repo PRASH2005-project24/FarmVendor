@@ -27,6 +27,11 @@ db_config = {
     'database': os.environ.get('DB_NAME', 'farmer_vendor_db'),
 }
 
+if db_config['host'] != 'localhost' and db_config['host'] != '127.0.0.1':
+    db_config['ssl_disabled'] = False
+    db_config['ssl_verify_cert'] = False
+    db_config['ssl_verify_identity'] = False
+
 try:
     pool = pooling.MySQLConnectionPool(
         pool_name="farmer_pool",
@@ -44,6 +49,24 @@ def get_db():
     if pool is None:
         raise Exception("Database pool is not initialized")
     return pool.get_connection()
+
+@app.route('/debug-db')
+def debug_db():
+    if pool is not None:
+        return jsonify({"status": "Pool is initialized and working"}), 200
+    try:
+        tmp_pool = pooling.MySQLConnectionPool(
+            pool_name="test_pool", pool_size=1, pool_reset_session=True, **db_config
+        )
+        return jsonify({"status": "Created successfully via debug route"}), 200
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "host": db_config['host'],
+            "port": db_config['port'],
+            "user": db_config['user'],
+            "database": db_config['database']
+        }), 500
 
 
 def gen_id(prefix, table):
