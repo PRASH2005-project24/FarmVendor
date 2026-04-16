@@ -132,6 +132,12 @@ const translations = {
     confirmDeleteExpense: 'Delete this expense?',
     confirmDeleteHarvest: 'Delete this harvest record?',
 
+    // Reports
+    reports: 'Reports',
+    reportsDesc: 'View reports powered by stored procedures and audit logs from triggers',
+    analytics: 'ANALYTICS',
+    selectSeason: 'Select Season',
+
     // Language
     language: 'Language',
   },
@@ -262,6 +268,11 @@ const translations = {
     confirmDeleteExpense: 'यह खर्च हटाएं?',
     confirmDeleteHarvest: 'यह कटाई रिकॉर्ड हटाएं?',
 
+    reports: 'रिपोर्ट',
+    reportsDesc: 'संग्रहित प्रक्रियाओं और ट्रिगर ऑडिट लॉग से रिपोर्ट देखें',
+    analytics: 'विश्लेषण',
+    selectSeason: 'मौसम चुनें',
+
     language: 'भाषा',
   },
 
@@ -390,6 +401,11 @@ const translations = {
     confirmDeleteSale: 'ही विक्री नोंद हटवायची?',
     confirmDeleteExpense: 'हा खर्च हटवायचा?',
     confirmDeleteHarvest: 'ही कापणी नोंद हटवायची?',
+
+    reports: 'अहवाल',
+    reportsDesc: 'संग्रहित प्रक्रिया आणि ट्रिगर ऑडिट लॉग मधून अहवाल पहा',
+    analytics: 'विश्लेषण',
+    selectSeason: 'हंगाम निवडा',
 
     language: 'भाषा',
   },

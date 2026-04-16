@@ -85,7 +85,7 @@ export default function Dashboard() {
                         <td>{sale.sale_id}</td>
                         <td>{sale.sale_date}</td>
                         <td>{sale.product_name}</td>
-                        <td>{sale.quantity}</td>
+                        <td>{sale.quantity_Kg}</td>
                         <td className="amount">₹{sale.price}</td>
                         <td className="amount amount-positive">₹{sale.total}</td>
                       </tr>
@@ -107,7 +107,7 @@ export default function Dashboard() {
                     </div>
                     <div className="mobile-card-row">
                       <span className="mobile-card-label">{t('qty')}</span>
-                      <span className="mobile-card-value">{sale.quantity}</span>
+                      <span className="mobile-card-value">{sale.quantity_Kg}</span>
                     </div>
                     <div className="mobile-card-row">
                       <span className="mobile-card-label">{t('total')}</span>

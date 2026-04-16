@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext';
 import {
   FiHome, FiUsers, FiMap, FiBox, FiShoppingCart,
-  FiDollarSign, FiLayers, FiPackage, FiX, FiGlobe
+  FiDollarSign, FiLayers, FiPackage, FiX, FiGlobe, FiBarChart2
 } from 'react-icons/fi';
 
 const langOptions = [
@@ -26,6 +26,8 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/products', label: t('products'), icon: <FiBox /> },
     { path: '/sales', label: t('sales'), icon: <FiShoppingCart /> },
     { path: '/expenses', label: t('expenses'), icon: <FiDollarSign /> },
+    { section: t('analytics') || 'ANALYTICS' },
+    { path: '/reports', label: t('reports') || 'Reports', icon: <FiBarChart2 /> },
   ];
 
   return (

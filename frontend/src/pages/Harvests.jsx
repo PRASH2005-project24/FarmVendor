@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import API from '../api';
-import { FiPlus, FiTrash2 } from 'react-icons/fi';
+import { FiPlus, FiTrash2, FiEdit2 } from 'react-icons/fi';
 
 export default function Harvests() {
   const { t } = useLanguage();
@@ -9,15 +9,23 @@ export default function Harvests() {
   const [crops, setCrops] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ crop_id: '', yield_amount: '', profit: '', harvest_date: '' });
+  const [sortBy, setSortBy] = useState('created_at');
+  const [order, setOrder] = useState('desc');
+  const [filterSeason, setFilterSeason] = useState('');
+  const [filterCrop, setFilterCrop] = useState('');
+  const [editItem, setEditItem] = useState(null);
 
   const fetchData = () => {
-    Promise.all([API.get('/harvests'), API.get('/crops')])
+    const params = new URLSearchParams({ sort_by: sortBy, order });
+    if (filterSeason) params.append('season', filterSeason);
+    if (filterCrop) params.append('crop_id', filterCrop);
+    Promise.all([API.get(`/harvests?${params}`), API.get('/crops')])
       .then(([harvRes, cropRes]) => { setHarvests(harvRes.data); setCrops(cropRes.data); })
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [sortBy, order, filterSeason, filterCrop]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -29,8 +37,13 @@ export default function Harvests() {
 
   const handleDelete = (id) => {
     if (!confirm(t('confirmDeleteHarvest'))) return;
-    API.delete(`/harvests/${id}`)
-      .then(() => fetchData())
+    API.delete(`/harvests/${id}`).then(() => fetchData()).catch(err => alert('Error: ' + err.message));
+  };
+
+  const handleUpdate = (e) => {
+    e.preventDefault();
+    API.put(`/harvests/${editItem.harvest_id}`, editItem)
+      .then(() => { setEditItem(null); fetchData(); })
       .catch(err => alert('Error: ' + err.message));
   };
 
@@ -81,6 +94,39 @@ export default function Harvests() {
 
       <div className="glass-card">
         <div className="glass-card-header"><h3>{t('allHarvests')} ({harvests.length})</h3></div>
+        <div className="filter-toolbar">
+          <div className="filter-group">
+            <label>Sort By</label>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
+              <option value="created_at">Date Added</option>
+              <option value="profit">Profit</option>
+              <option value="harvest_date">Harvest Date</option>
+              <option value="yield_amount">Yield</option>
+            </select>
+          </div>
+          <div className="filter-group">
+            <label>Order</label>
+            <select value={order} onChange={e => setOrder(e.target.value)}>
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+          </div>
+          <div className="filter-group">
+            <label>Filter Season</label>
+            <select value={filterSeason} onChange={e => setFilterSeason(e.target.value)}>
+              <option value="">All</option>
+              <option value="Kharif">Kharif</option>
+              <option value="Rabi">Rabi</option>
+            </select>
+          </div>
+          <div className="filter-group">
+            <label>Filter Crop</label>
+            <select value={filterCrop} onChange={e => setFilterCrop(e.target.value)}>
+              <option value="">All</option>
+              {crops.map(c => <option key={c.crop_id} value={c.crop_id}>{c.crop_name}</option>)}
+            </select>
+          </div>
+        </div>
         <div className="glass-card-body">
           {loading ? (
             <div className="loading"><div className="spinner"></div><span>{t('loading')}</span></div>
@@ -99,7 +145,12 @@ export default function Harvests() {
                         <td>{h.yield_amount}</td>
                         <td className="amount amount-positive">{h.profit ? `₹${h.profit.toLocaleString()}` : '—'}</td>
                         <td>{h.harvest_date || '—'}</td>
-                        <td><button className="btn btn-danger" onClick={() => handleDelete(h.harvest_id)}><FiTrash2 /> {t('delete')}</button></td>
+                        <td>
+                          <div className="action-btns">
+                            <button className="btn btn-edit btn-sm" onClick={() => setEditItem({...h})}><FiEdit2 /> Edit</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(h.harvest_id)}><FiTrash2 /></button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -113,7 +164,12 @@ export default function Harvests() {
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('yieldAmount')}</span><span className="mobile-card-value">{h.yield_amount}</span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('profit')}</span><span className="mobile-card-value amount amount-positive">{h.profit ? `₹${h.profit.toLocaleString()}` : '—'}</span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('date')}</span><span className="mobile-card-value">{h.harvest_date || '—'}</span></div>
-                    <div className="mobile-card-actions"><button className="btn btn-danger" onClick={() => handleDelete(h.harvest_id)}><FiTrash2 /> {t('delete')}</button></div>
+                    <div className="mobile-card-actions">
+                      <div className="action-btns">
+                        <button className="btn btn-edit btn-sm" onClick={() => setEditItem({...h})}><FiEdit2 /> Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(h.harvest_id)}><FiTrash2 /></button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -121,6 +177,40 @@ export default function Harvests() {
           )}
         </div>
       </div>
+
+      {editItem && (
+        <div className="modal-overlay" onClick={() => setEditItem(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3>Edit Harvest — {editItem.harvest_id}</h3>
+            <form onSubmit={handleUpdate}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>{t('crop')} *</label>
+                  <select value={editItem.crop_id} onChange={e => setEditItem({...editItem, crop_id: e.target.value})} required>
+                    {crops.map(c => <option key={c.crop_id} value={c.crop_id}>{c.crop_name} - {c.season}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>{t('yieldAmount')} *</label>
+                  <input type="text" value={editItem.yield_amount} onChange={e => setEditItem({...editItem, yield_amount: e.target.value})} required />
+                </div>
+                <div className="form-group">
+                  <label>{t('profitRs')}</label>
+                  <input type="number" step="0.01" value={editItem.profit || ''} onChange={e => setEditItem({...editItem, profit: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label>{t('harvestDate')}</label>
+                  <input type="date" value={editItem.harvest_date || ''} onChange={e => setEditItem({...editItem, harvest_date: e.target.value})} />
+                </div>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setEditItem(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

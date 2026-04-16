@@ -9,6 +9,7 @@ import Harvests from './pages/Harvests';
 import Products from './pages/Products';
 import Sales from './pages/Sales';
 import Expenses from './pages/Expenses';
+import Reports from './pages/Reports';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -43,6 +44,7 @@ function App() {
           <Route path="/products" element={<Products />} />
           <Route path="/sales" element={<Sales />} />
           <Route path="/expenses" element={<Expenses />} />
+          <Route path="/reports" element={<Reports />} />
         </Routes>
       </main>
     </div>

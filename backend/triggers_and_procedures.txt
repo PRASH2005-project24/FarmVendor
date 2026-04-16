@@ -1,0 +1,387 @@
+================================================================================
+  FARMER VENDOR MANAGEMENT SYSTEM
+  Triggers & Stored Procedures Documentation
+================================================================================
+
+
+================================================================================
+  TRIGGERS (Topic 8 - Database Triggers)
+================================================================================
+
+Purpose: Implement and test triggers to maintain data integrity in the database.
+
+
+--------------------------------------------------------------------------------
+  TRIGGER 1: trg_validate_expense_amount
+--------------------------------------------------------------------------------
+Table:   expense
+Event:   BEFORE INSERT
+Purpose: Prevents inserting an expense with amount <= 0
+
+SQL Code:
+---------
+DELIMITER //
+CREATE TRIGGER trg_validate_expense_amount
+BEFORE INSERT ON expense
+FOR EACH ROW
+BEGIN
+    IF NEW.amount <= 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Expense amount must be greater than zero';
+    END IF;
+END //
+DELIMITER ;
+
+Test:
+  INSERT INTO expense VALUES ('E99', 'Test', -100, '2026-01-01', 'L1', NOW());
+  -- Expected: ERROR 1644 (45000): Expense amount must be greater than zero
+
+
+--------------------------------------------------------------------------------
+  TRIGGER 2: trg_set_default_harvest_date
+--------------------------------------------------------------------------------
+Table:   harvest
+Event:   BEFORE INSERT
+Purpose: Automatically sets harvest_date to current date if not provided
+
+SQL Code:
+---------
+DELIMITER //
+CREATE TRIGGER trg_set_default_harvest_date
+BEFORE INSERT ON harvest
+FOR EACH ROW
+BEGIN
+    IF NEW.harvest_date IS NULL THEN
+        SET NEW.harvest_date = CURDATE();
+    END IF;
+END //
+DELIMITER ;
+
+Test:
+  INSERT INTO harvest VALUES ('H99', 'C1', '100 kg', 500.00, NULL, NOW());
+  SELECT harvest_date FROM harvest WHERE harvest_id = 'H99';
+  -- Expected: Today's date (e.g., 2026-04-16)
+
+
+--------------------------------------------------------------------------------
+  TRIGGER 3: trg_log_sale_insert
+--------------------------------------------------------------------------------
+Table:   sales
+Event:   AFTER INSERT
+Purpose: Logs every new sale insertion into the audit_log table
+
+SQL Code:
+---------
+DELIMITER //
+CREATE TRIGGER trg_log_sale_insert
+AFTER INSERT ON sales
+FOR EACH ROW
+BEGIN
+    INSERT INTO audit_log (table_name, action, record_id, details)
+    VALUES ('sales', 'INSERT', NEW.sale_id,
+        CONCAT('Product: ', NEW.product_id, ', Qty: ', NEW.quantity_Kg,
+               ' kg, Price: Rs.', NEW.price));
+END //
+DELIMITER ;
+
+Test:
+  INSERT INTO sales VALUES ('S99', '2026-06-01', 'P1', 5, 200.00, NOW());
+  SELECT * FROM audit_log WHERE record_id = 'S99';
+  -- Expected: Row with details "Product: P1, Qty: 5.00 kg, Price: Rs.200.00"
+
+
+--------------------------------------------------------------------------------
+  TRIGGER 4: trg_prevent_negative_profit
+--------------------------------------------------------------------------------
+Table:   harvest
+Event:   BEFORE INSERT
+Purpose: Prevents inserting a harvest with negative profit value
+
+SQL Code:
+---------
+DELIMITER //
+CREATE TRIGGER trg_prevent_negative_profit
+BEFORE INSERT ON harvest
+FOR EACH ROW
+BEGIN
+    IF NEW.profit IS NOT NULL AND NEW.profit < 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Harvest profit cannot be negative';
+    END IF;
+END //
+DELIMITER ;
+
+Test:
+  INSERT INTO harvest VALUES ('H98', 'C1', '50 kg', -500.00, '2026-06-01', NOW());
+  -- Expected: ERROR 1644 (45000): Harvest profit cannot be negative
+
+
+================================================================================
+  STORED PROCEDURES WITH CURSORS (Topic 7)
+================================================================================
+
+Purpose: Create and execute stored procedures / functions using cursors.
+
+
+--------------------------------------------------------------------------------
+  PROCEDURE 1: sp_farmer_summary()
+--------------------------------------------------------------------------------
+Purpose: Uses a CURSOR to iterate through all farmers and compute:
+         - Number of lands owned
+         - Total expenses across all lands
+         - Total harvest profit
+
+SQL Code:
+---------
+DELIMITER //
+CREATE PROCEDURE sp_farmer_summary()
+BEGIN
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE v_farmer_id VARCHAR(10);
+    DECLARE v_name VARCHAR(100);
+    DECLARE v_location VARCHAR(100);
+    DECLARE v_land_count INT;
+    DECLARE v_total_expense DECIMAL(12,2);
+    DECLARE v_total_profit DECIMAL(12,2);
+
+    DECLARE farmer_cursor CURSOR FOR SELECT farmer_id, name, location FROM farmer;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_farmer_summary;
+    CREATE TEMPORARY TABLE tmp_farmer_summary (
+        farmer_id VARCHAR(10),
+        farmer_name VARCHAR(100),
+        location VARCHAR(100),
+        land_count INT,
+        total_expense DECIMAL(12,2),
+        total_harvest_profit DECIMAL(12,2)
+    );
+
+    OPEN farmer_cursor;
+    read_loop: LOOP
+        FETCH farmer_cursor INTO v_farmer_id, v_name, v_location;
+        IF done THEN LEAVE read_loop; END IF;
+
+        SELECT COUNT(*) INTO v_land_count FROM land WHERE farmer_id = v_farmer_id;
+
+        SELECT COALESCE(SUM(e.amount), 0) INTO v_total_expense
+        FROM expense e JOIN land l ON e.land_id = l.land_id
+        WHERE l.farmer_id = v_farmer_id;
+
+        SELECT COALESCE(SUM(h.profit), 0) INTO v_total_profit
+        FROM harvest h JOIN crop c ON h.crop_id = c.crop_id;
+
+        INSERT INTO tmp_farmer_summary
+        VALUES (v_farmer_id, v_name, v_location, v_land_count, v_total_expense, v_total_profit);
+    END LOOP;
+    CLOSE farmer_cursor;
+
+    SELECT * FROM tmp_farmer_summary;
+    DROP TEMPORARY TABLE IF EXISTS tmp_farmer_summary;
+END //
+DELIMITER ;
+
+Usage:
+  CALL sp_farmer_summary();
+
+
+--------------------------------------------------------------------------------
+  PROCEDURE 2: sp_monthly_sales_report()
+--------------------------------------------------------------------------------
+Purpose: Uses a CURSOR to group sales by month and compute:
+         - Number of sales per month
+         - Total quantity sold (kg)
+         - Total revenue generated
+
+SQL Code:
+---------
+DELIMITER //
+CREATE PROCEDURE sp_monthly_sales_report()
+BEGIN
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE v_month VARCHAR(7);
+    DECLARE v_total_qty DECIMAL(12,2);
+    DECLARE v_total_revenue DECIMAL(12,2);
+    DECLARE v_sale_count INT;
+
+    DECLARE month_cursor CURSOR FOR
+        SELECT DATE_FORMAT(sale_date, '%Y-%m') AS sale_month
+        FROM sales GROUP BY sale_month ORDER BY sale_month;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_monthly_sales;
+    CREATE TEMPORARY TABLE tmp_monthly_sales (
+        sale_month VARCHAR(7),
+        total_sales INT,
+        total_quantity_kg DECIMAL(12,2),
+        total_revenue DECIMAL(12,2)
+    );
+
+    OPEN month_cursor;
+    read_loop: LOOP
+        FETCH month_cursor INTO v_month;
+        IF done THEN LEAVE read_loop; END IF;
+
+        SELECT COUNT(*), COALESCE(SUM(quantity_Kg), 0), COALESCE(SUM(quantity_Kg * price), 0)
+        INTO v_sale_count, v_total_qty, v_total_revenue
+        FROM sales WHERE DATE_FORMAT(sale_date, '%Y-%m') = v_month;
+
+        INSERT INTO tmp_monthly_sales VALUES (v_month, v_sale_count, v_total_qty, v_total_revenue);
+    END LOOP;
+    CLOSE month_cursor;
+
+    SELECT * FROM tmp_monthly_sales;
+    DROP TEMPORARY TABLE IF EXISTS tmp_monthly_sales;
+END //
+DELIMITER ;
+
+Usage:
+  CALL sp_monthly_sales_report();
+
+
+--------------------------------------------------------------------------------
+  PROCEDURE 3: sp_revenue_by_product()
+--------------------------------------------------------------------------------
+Purpose: Uses a CURSOR to iterate products and compute:
+         - Number of sales per product
+         - Total quantity sold (kg)
+         - Total revenue per product
+
+SQL Code:
+---------
+DELIMITER //
+CREATE PROCEDURE sp_revenue_by_product()
+BEGIN
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE v_product_id VARCHAR(10);
+    DECLARE v_product_name VARCHAR(100);
+    DECLARE v_total_qty DECIMAL(12,2);
+    DECLARE v_total_revenue DECIMAL(12,2);
+    DECLARE v_sale_count INT;
+
+    DECLARE product_cursor CURSOR FOR SELECT product_id, product_name FROM product;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_revenue_by_product;
+    CREATE TEMPORARY TABLE tmp_revenue_by_product (
+        product_id VARCHAR(10),
+        product_name VARCHAR(100),
+        total_sales INT,
+        total_quantity_kg DECIMAL(12,2),
+        total_revenue DECIMAL(12,2)
+    );
+
+    OPEN product_cursor;
+    read_loop: LOOP
+        FETCH product_cursor INTO v_product_id, v_product_name;
+        IF done THEN LEAVE read_loop; END IF;
+
+        SELECT COUNT(*), COALESCE(SUM(quantity_Kg), 0), COALESCE(SUM(quantity_Kg * price), 0)
+        INTO v_sale_count, v_total_qty, v_total_revenue
+        FROM sales WHERE product_id = v_product_id;
+
+        INSERT INTO tmp_revenue_by_product
+        VALUES (v_product_id, v_product_name, v_sale_count, v_total_qty, v_total_revenue);
+    END LOOP;
+    CLOSE product_cursor;
+
+    SELECT * FROM tmp_revenue_by_product;
+    DROP TEMPORARY TABLE IF EXISTS tmp_revenue_by_product;
+END //
+DELIMITER ;
+
+Usage:
+  CALL sp_revenue_by_product();
+
+
+--------------------------------------------------------------------------------
+  PROCEDURE 4: sp_expense_by_land()
+--------------------------------------------------------------------------------
+Purpose: Uses a CURSOR to iterate through all lands and compute:
+         - Number of expenses per land
+         - Total expense amount per land
+         - Associated farmer name
+
+SQL Code:
+---------
+DELIMITER //
+CREATE PROCEDURE sp_expense_by_land()
+BEGIN
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE v_land_id VARCHAR(10);
+    DECLARE v_area VARCHAR(50);
+    DECLARE v_location VARCHAR(100);
+    DECLARE v_farmer_name VARCHAR(100);
+    DECLARE v_total_expense DECIMAL(12,2);
+    DECLARE v_expense_count INT;
+
+    DECLARE land_cursor CURSOR FOR
+        SELECT l.land_id, l.area, l.location, f.name
+        FROM land l JOIN farmer f ON l.farmer_id = f.farmer_id;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_expense_by_land;
+    CREATE TEMPORARY TABLE tmp_expense_by_land (
+        land_id VARCHAR(10),
+        area VARCHAR(50),
+        location VARCHAR(100),
+        farmer_name VARCHAR(100),
+        expense_count INT,
+        total_expense DECIMAL(12,2)
+    );
+
+    OPEN land_cursor;
+    read_loop: LOOP
+        FETCH land_cursor INTO v_land_id, v_area, v_location, v_farmer_name;
+        IF done THEN LEAVE read_loop; END IF;
+
+        SELECT COUNT(*), COALESCE(SUM(amount), 0)
+        INTO v_expense_count, v_total_expense
+        FROM expense WHERE land_id = v_land_id;
+
+        INSERT INTO tmp_expense_by_land
+        VALUES (v_land_id, v_area, v_location, v_farmer_name, v_expense_count, v_total_expense);
+    END LOOP;
+    CLOSE land_cursor;
+
+    SELECT * FROM tmp_expense_by_land;
+    DROP TEMPORARY TABLE IF EXISTS tmp_expense_by_land;
+END //
+DELIMITER ;
+
+Usage:
+  CALL sp_expense_by_land();
+
+
+================================================================================
+  SQL VIEWS (Topic 5 - JOIN Operations and Views)
+================================================================================
+
+-- View 1: farmer_summary_view
+CREATE VIEW farmer_summary_view AS
+SELECT f.farmer_id, f.name, f.location,
+    COUNT(DISTINCT l.land_id) AS total_lands,
+    COALESCE(SUM(e.amount), 0) AS total_expenses
+FROM farmer f
+LEFT JOIN land l ON f.farmer_id = l.farmer_id
+LEFT JOIN expense e ON l.land_id = e.land_id
+GROUP BY f.farmer_id, f.name, f.location;
+
+-- View 2: sales_report_view
+CREATE VIEW sales_report_view AS
+SELECT s.sale_id, s.sale_date, p.product_name, p.product_id,
+    s.quantity_Kg, s.price,
+    (s.quantity_Kg * s.price) AS total_amount
+FROM sales s
+JOIN product p ON s.product_id = p.product_id;
+
+-- View 3: expense_report_view
+CREATE VIEW expense_report_view AS
+SELECT e.expense_id, e.type, e.amount, e.expense_date,
+    l.land_id, l.area AS land_area, l.location AS land_location,
+    f.farmer_id, f.name AS farmer_name
+FROM expense e
+JOIN land l ON e.land_id = l.land_id
+JOIN farmer f ON l.farmer_id = f.farmer_id;
+
+================================================================================
