@@ -8,7 +8,7 @@ export default function Land() {
   const [lands, setLands] = useState([]);
   const [farmers, setFarmers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ area: '', location: '', farmer_id: '' });
+  const [form, setForm] = useState({ area: '', location: '', soil_type: '', farmer_id: '' });
   const [sortBy, setSortBy] = useState('created_at');
   const [order, setOrder] = useState('desc');
   const [filterFarmer, setFilterFarmer] = useState('');
@@ -29,7 +29,7 @@ export default function Land() {
     e.preventDefault();
     if (!form.area.trim() || !form.farmer_id) return;
     API.post('/land', form)
-      .then(() => { setForm({ area: '', location: '', farmer_id: '' }); fetchData(); })
+      .then(() => { setForm({ area: '', location: '', soil_type: '', farmer_id: '' }); fetchData(); })
       .catch(err => alert('Error: ' + err.message));
   };
 
@@ -64,6 +64,18 @@ export default function Land() {
               <div className="form-group">
                 <label>{t('location')}</label>
                 <input type="text" placeholder="e.g. Pune Rural" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>{t('soilType') || 'Soil Type'}</label>
+                <select value={form.soil_type} onChange={e => setForm({ ...form, soil_type: e.target.value })}>
+                  <option value="">{t('selectSoilType') || 'Select Soil Type'}</option>
+                  <option value="Black Soil">Black Soil (काळी माती)</option>
+                  <option value="Alluvial Soil">Alluvial Soil (गाळाची माती)</option>
+                  <option value="Red Soil">Red Soil (लाल माती)</option>
+                  <option value="Laterite Soil">Laterite Soil (जांभी माती)</option>
+                  <option value="Sandy Soil">Sandy Soil (वाळूमिश्रित)</option>
+                  <option value="Clayey Soil">Clayey Soil (चिकणमाती)</option>
+                </select>
               </div>
               <div className="form-group">
                 <label>{t('farmer')} *</label>
@@ -113,11 +125,13 @@ export default function Land() {
             <>
               <div className="data-table-wrapper">
                 <table className="data-table">
-                  <thead><tr><th>{t('landId')}</th><th>{t('area')}</th><th>{t('location')}</th><th>{t('farmer')}</th><th>{t('action')}</th></tr></thead>
+                  <thead><tr><th>{t('landId')}</th><th>{t('area')}</th><th>{t('location')}</th><th>{t('soilType') || 'Soil Type'}</th><th>{t('farmer')}</th><th>{t('action')}</th></tr></thead>
                   <tbody>
                     {lands.map(l => (
                       <tr key={l.land_id}>
-                        <td>{l.land_id}</td><td>{l.area}</td><td>{l.location || '—'}</td><td>{l.farmer_name || l.farmer_id}</td>
+                        <td>{l.land_id}</td><td>{l.area}</td><td>{l.location || '—'}</td>
+                        <td>{l.soil_type ? <span className="badge badge-default">{l.soil_type}</span> : '—'}</td>
+                        <td>{l.farmer_name || l.farmer_id}</td>
                         <td>
                           <div className="action-btns">
                             <button className="btn btn-edit btn-sm" onClick={() => setEditItem({...l})}><FiEdit2 /> Edit</button>
@@ -135,6 +149,7 @@ export default function Land() {
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('landId')}</span><span className="mobile-card-value">{l.land_id}</span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('area')}</span><span className="mobile-card-value">{l.area}</span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('location')}</span><span className="mobile-card-value">{l.location || '—'}</span></div>
+                    <div className="mobile-card-row"><span className="mobile-card-label">{t('soilType') || 'Soil Type'}</span><span className="mobile-card-value">{l.soil_type || '—'}</span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('farmer')}</span><span className="mobile-card-value">{l.farmer_name || l.farmer_id}</span></div>
                     <div className="mobile-card-actions">
                       <div className="action-btns">
@@ -163,6 +178,18 @@ export default function Land() {
                 <div className="form-group">
                   <label>{t('location')}</label>
                   <input type="text" value={editItem.location || ''} onChange={e => setEditItem({...editItem, location: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label>{t('soilType') || 'Soil Type'}</label>
+                  <select value={editItem.soil_type || ''} onChange={e => setEditItem({...editItem, soil_type: e.target.value})}>
+                    <option value="">None</option>
+                    <option value="Black Soil">Black Soil</option>
+                    <option value="Alluvial Soil">Alluvial Soil</option>
+                    <option value="Red Soil">Red Soil</option>
+                    <option value="Laterite Soil">Laterite Soil</option>
+                    <option value="Sandy Soil">Sandy Soil</option>
+                    <option value="Clayey Soil">Clayey Soil</option>
+                  </select>
                 </div>
                 <div className="form-group">
                   <label>{t('farmer')} *</label>

@@ -18,7 +18,8 @@ export default function Reports() {
 
   useEffect(() => {
     setLoading(true);
-    const tab = TABS.find(t => t.key === activeTab);
+    setData([]);
+    const tab = TABS.find(tb => tb.key === activeTab);
     API.get(tab.endpoint)
       .then(res => setData(res.data))
       .catch(err => console.error(err))
@@ -39,8 +40,8 @@ export default function Reports() {
                 <tr key={r.farmer_id}>
                   <td>{r.farmer_id}</td><td>{r.farmer_name}</td><td>{r.location || '—'}</td>
                   <td>{r.land_count}</td>
-                  <td className="amount amount-negative">₹{r.total_expense.toLocaleString()}</td>
-                  <td className="amount amount-positive">₹{r.total_harvest_profit.toLocaleString()}</td>
+                  <td className="amount amount-negative">₹{(r.total_expense ?? 0).toLocaleString()}</td>
+                  <td className="amount amount-positive">₹{(r.total_harvest_profit ?? 0).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -55,7 +56,7 @@ export default function Reports() {
                 <tr key={r.sale_month}>
                   <td>{r.sale_month}</td><td>{r.total_sales}</td>
                   <td>{r.total_quantity_kg} kg</td>
-                  <td className="amount amount-positive">₹{r.total_revenue.toLocaleString()}</td>
+                  <td className="amount amount-positive">₹{(r.total_revenue ?? 0).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -70,7 +71,7 @@ export default function Reports() {
                 <tr key={r.product_id}>
                   <td>{r.product_name}</td><td>{r.total_sales}</td>
                   <td>{r.total_quantity_kg} kg</td>
-                  <td className="amount amount-positive">₹{r.total_revenue.toLocaleString()}</td>
+                  <td className="amount amount-positive">₹{(r.total_revenue ?? 0).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -85,7 +86,7 @@ export default function Reports() {
                 <tr key={r.land_id}>
                   <td>{r.land_id}</td><td>{r.area}</td><td>{r.location || '—'}</td>
                   <td>{r.farmer_name}</td><td>{r.expense_count}</td>
-                  <td className="amount amount-negative">₹{r.total_expense.toLocaleString()}</td>
+                  <td className="amount amount-negative">₹{(r.total_expense ?? 0).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

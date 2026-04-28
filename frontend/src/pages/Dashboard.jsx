@@ -31,6 +31,7 @@ export default function Dashboard() {
     { label: t('totalFarmers'), value: stats.totalFarmers, emoji: '👨‍🌾' },
     { label: t('landRecordsLabel'), value: stats.totalLands, emoji: '🗺️' },
     { label: t('cropsLabel'), value: stats.totalCrops, emoji: '🌱' },
+    { label: t('activitiesLabel'), value: stats.totalActivities, emoji: '🧪' },
     { label: t('productsLabel'), value: stats.totalProducts, emoji: '📦' },
     { label: t('totalSales'), value: stats.totalSales, emoji: '🛒' },
     { label: t('revenue'), value: `₹${stats.totalRevenue.toLocaleString()}`, emoji: '💰', className: 'revenue' },

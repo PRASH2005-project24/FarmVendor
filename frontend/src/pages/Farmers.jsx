@@ -11,6 +11,8 @@ export default function Farmers() {
   const [sortBy, setSortBy] = useState('created_at');
   const [order, setOrder] = useState('desc');
   const [filterLoc, setFilterLoc] = useState('');
+  const [suggestionData, setSuggestionData] = useState(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [editItem, setEditItem] = useState(null);
 
   const fetchFarmers = () => {
@@ -33,10 +35,16 @@ export default function Farmers() {
   };
 
   const handleDelete = (id) => {
-    if (!confirm(t('confirmDeleteFarmer'))) return;
-    API.delete(`/farmers/${id}`)
-      .then(() => fetchFarmers())
-      .catch(err => alert('Error: ' + err.message));
+    if (!confirm(t('confirmDeleteFarmer') || 'Delete this farmer?')) return;
+    API.delete(`/farmers/${id}`).then(() => fetchFarmers()).catch(err => alert('Error: ' + err.message));
+  };
+
+  const handleGetSuggestion = (farmerId) => {
+    setLoadingSuggestion(true);
+    API.get(`/smart-suggestions/${farmerId}`)
+      .then(res => setSuggestionData(res.data))
+      .catch(err => alert('Error getting suggestion: ' + err.message))
+      .finally(() => setLoadingSuggestion(false));
   };
 
   const handleUpdate = (e) => {
@@ -118,6 +126,7 @@ export default function Farmers() {
                         <td>{f.farmer_id}</td><td>{f.name}</td><td>{f.location || '—'}</td>
                         <td>
                           <div className="action-btns">
+                            <button className="btn btn-sm btn-secondary" onClick={() => handleGetSuggestion(f.farmer_id)} title="Get Smart Advice">💡 Advice</button>
                             <button className="btn btn-edit btn-sm" onClick={() => setEditItem({...f})}><FiEdit2 /> Edit</button>
                             <button className="btn btn-danger btn-sm" onClick={() => handleDelete(f.farmer_id)}><FiTrash2 /></button>
                           </div>
@@ -135,6 +144,7 @@ export default function Farmers() {
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('location')}</span><span className="mobile-card-value">{f.location || '—'}</span></div>
                     <div className="mobile-card-actions">
                       <div className="action-btns">
+                        <button className="btn btn-sm btn-secondary" onClick={() => handleGetSuggestion(f.farmer_id)}>💡 Advice</button>
                         <button className="btn btn-edit btn-sm" onClick={() => setEditItem({...f})}><FiEdit2 /> Edit</button>
                         <button className="btn btn-danger btn-sm" onClick={() => handleDelete(f.farmer_id)}><FiTrash2 /></button>
                       </div>
@@ -167,6 +177,20 @@ export default function Farmers() {
                 <button type="submit" className="btn btn-primary">Save Changes</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {suggestionData && (
+        <div className="modal-overlay" onClick={() => setSuggestionData(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: '450px', textAlign: 'center'}}>
+            <h3 style={{fontSize: '1.5rem', marginBottom: '16px'}}>💡 Smart Suggestion</h3>
+            <div style={{fontSize: '3rem', margin: '16px 0'}}>🌱</div>
+            <h4 style={{color: 'var(--primary-light)', fontSize: '1.25rem', marginBottom: '8px'}}>Recommended Crop: {suggestionData.recommended_crop}</h4>
+            <p style={{color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '24px'}}>{suggestionData.basis}</p>
+            <div className="modal-actions" style={{justifyContent: 'center'}}>
+              <button type="button" className="btn btn-primary" onClick={() => setSuggestionData(null)}>Got it</button>
+            </div>
           </div>
         </div>
       )}

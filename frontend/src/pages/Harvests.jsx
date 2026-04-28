@@ -8,7 +8,7 @@ export default function Harvests() {
   const [harvests, setHarvests] = useState([]);
   const [crops, setCrops] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ crop_id: '', yield_amount: '', profit: '', harvest_date: '' });
+  const [form, setForm] = useState({ crop_id: '', yield_amount: '', total_cost: '', profit: '', harvest_date: '' });
   const [sortBy, setSortBy] = useState('created_at');
   const [order, setOrder] = useState('desc');
   const [filterSeason, setFilterSeason] = useState('');
@@ -31,7 +31,7 @@ export default function Harvests() {
     e.preventDefault();
     if (!form.crop_id || !form.yield_amount.trim()) return;
     API.post('/harvests', form)
-      .then(() => { setForm({ crop_id: '', yield_amount: '', profit: '', harvest_date: '' }); fetchData(); })
+      .then(() => { setForm({ crop_id: '', yield_amount: '', total_cost: '', profit: '', harvest_date: '' }); fetchData(); })
       .catch(err => alert('Error: ' + err.message));
   };
 
@@ -79,6 +79,10 @@ export default function Harvests() {
                 <input type="text" placeholder="e.g. 500 kg" value={form.yield_amount} onChange={e => setForm({ ...form, yield_amount: e.target.value })} required />
               </div>
               <div className="form-group">
+                <label>{t('totalCostRs')}</label>
+                <input type="number" step="0.01" placeholder="e.g. 958000" value={form.total_cost} onChange={e => setForm({ ...form, total_cost: e.target.value })} />
+              </div>
+              <div className="form-group">
                 <label>{t('profitRs')}</label>
                 <input type="number" step="0.01" placeholder="e.g. 8000" value={form.profit} onChange={e => setForm({ ...form, profit: e.target.value })} />
               </div>
@@ -100,6 +104,7 @@ export default function Harvests() {
             <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
               <option value="created_at">Date Added</option>
               <option value="profit">Profit</option>
+              <option value="total_cost">Total Cost</option>
               <option value="harvest_date">Harvest Date</option>
               <option value="yield_amount">Yield</option>
             </select>
@@ -136,13 +141,14 @@ export default function Harvests() {
             <>
               <div className="data-table-wrapper">
                 <table className="data-table">
-                  <thead><tr><th>{t('harvestId')}</th><th>{t('crop')}</th><th>{t('season')}</th><th>{t('yieldAmount')}</th><th>{t('profit')}</th><th>{t('date')}</th><th>{t('action')}</th></tr></thead>
+                  <thead><tr><th>{t('harvestId')}</th><th>{t('crop')}</th><th>{t('season')}</th><th>{t('yieldAmount')}</th><th>{t('totalCost')}</th><th>{t('profit')}</th><th>{t('date')}</th><th>{t('action')}</th></tr></thead>
                   <tbody>
                     {harvests.map(h => (
                       <tr key={h.harvest_id}>
                         <td>{h.harvest_id}</td><td>{h.crop_name || h.crop_id}</td>
                         <td><span className={getBadgeClass(h.season)}>{h.season || '—'}</span></td>
                         <td>{h.yield_amount}</td>
+                        <td className="amount amount-negative">{h.total_cost ? `₹${h.total_cost.toLocaleString()}` : '—'}</td>
                         <td className="amount amount-positive">{h.profit ? `₹${h.profit.toLocaleString()}` : '—'}</td>
                         <td>{h.harvest_date || '—'}</td>
                         <td>
@@ -162,6 +168,7 @@ export default function Harvests() {
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('crop')}</span><span className="mobile-card-value">{h.crop_name || h.crop_id}</span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('season')}</span><span className="mobile-card-value"><span className={getBadgeClass(h.season)}>{h.season || '—'}</span></span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('yieldAmount')}</span><span className="mobile-card-value">{h.yield_amount}</span></div>
+                    <div className="mobile-card-row"><span className="mobile-card-label">{t('totalCost')}</span><span className="mobile-card-value amount amount-negative">{h.total_cost ? `₹${h.total_cost.toLocaleString()}` : '—'}</span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('profit')}</span><span className="mobile-card-value amount amount-positive">{h.profit ? `₹${h.profit.toLocaleString()}` : '—'}</span></div>
                     <div className="mobile-card-row"><span className="mobile-card-label">{t('date')}</span><span className="mobile-card-value">{h.harvest_date || '—'}</span></div>
                     <div className="mobile-card-actions">
@@ -193,6 +200,10 @@ export default function Harvests() {
                 <div className="form-group">
                   <label>{t('yieldAmount')} *</label>
                   <input type="text" value={editItem.yield_amount} onChange={e => setEditItem({...editItem, yield_amount: e.target.value})} required />
+                </div>
+                <div className="form-group">
+                  <label>{t('totalCostRs')}</label>
+                  <input type="number" step="0.01" value={editItem.total_cost || ''} onChange={e => setEditItem({...editItem, total_cost: e.target.value})} />
                 </div>
                 <div className="form-group">
                   <label>{t('profitRs')}</label>

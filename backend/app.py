@@ -76,7 +76,9 @@ def gen_id(prefix, table):
     id_col = {
         'farmer': 'farmer_id', 'land': 'land_id', 'crop': 'crop_id',
         'product': 'product_id', 'sales': 'sale_id', 'expense': 'expense_id',
-        'harvest': 'harvest_id'
+        'harvest': 'harvest_id', 'activity': 'activity_id',
+        'fertilizer_dosage': 'dosage_id', 'soil_report': 'report_id',
+        'exporter': 'exporter_id'
     }[table]
     # Get ALL IDs and find the true maximum number to avoid duplicates
     cursor.execute(f"SELECT {id_col} FROM {table}")
@@ -95,12 +97,16 @@ def gen_id(prefix, table):
 # ─── Helper: Build ORDER BY from query params ───────────
 ALLOWED_SORT = {
     'farmer': ['name', 'location', 'farmer_id', 'created_at'],
-    'land': ['area', 'location', 'farmer_id', 'land_id', 'created_at'],
+    'land': ['area', 'location', 'farmer_id', 'land_id', 'soil_type', 'created_at'],
     'crop': ['crop_name', 'season', 'crop_id', 'created_at'],
     'product': ['product_name', 'product_id', 'created_at'],
     'sales': ['sale_date', 'price', 'quantity_Kg', 'sale_id', 'created_at'],
     'expense': ['amount', 'expense_date', 'type', 'expense_id', 'created_at'],
-    'harvest': ['profit', 'harvest_date', 'yield_amount', 'harvest_id', 'created_at'],
+    'harvest': ['profit', 'harvest_date', 'yield_amount', 'harvest_id', 'total_cost', 'created_at'],
+    'activity': ['chemical_name', 'quantity', 'activity_date', 'activity_id', 'land_id', 'created_at'],
+    'fertilizer_dosage': ['fertilizer_name', 'quantity', 'application_stage', 'dosage_id', 'created_at'],
+    'exporter': ['exporter_name', 'exporter_type', 'crop_product', 'current_rate', 'distance_km', 'created_at'],
+    'soil_report': ['ph_level', 'report_date', 'report_id', 'created_at'],
 }
 
 def get_sort_clause(table, default='created_at', prefix=''):
@@ -170,6 +176,9 @@ def dashboard():
         cursor.execute("SELECT COUNT(*) as count FROM land")
         total_lands = cursor.fetchone()['count']
 
+        cursor.execute("SELECT COUNT(*) as count FROM activity")
+        total_activities = cursor.fetchone()['count']
+
         # Recent sales (last 5)
         cursor.execute("""
             SELECT s.sale_id, s.sale_date, p.product_name, s.quantity_Kg, s.price,
@@ -197,6 +206,7 @@ def dashboard():
             "totalCrops": total_crops,
             "totalHarvests": total_harvests,
             "totalLands": total_lands,
+            "totalActivities": total_activities,
             "netProfit": total_revenue - total_expenses,
             "recentSales": recent_sales
         }), 200
@@ -281,8 +291,8 @@ def handle_land():
             data = request.json
             lid = gen_id('L', 'land')
             cursor.execute(
-                "INSERT INTO land (land_id, area, location, farmer_id) VALUES (%s, %s, %s, %s)",
-                (lid, data['area'], data.get('location', ''), data['farmer_id'])
+                "INSERT INTO land (land_id, area, location, soil_type, farmer_id) VALUES (%s, %s, %s, %s, %s)",
+                (lid, data['area'], data.get('location', ''), data.get('soil_type'), data['farmer_id'])
             )
             conn.commit()
             cursor.close()
@@ -332,8 +342,8 @@ def modify_land(land_id):
         else:
             data = request.json
             cursor.execute(
-                "UPDATE land SET area = %s, location = %s, farmer_id = %s WHERE land_id = %s",
-                (data['area'], data.get('location', ''), data['farmer_id'], land_id)
+                "UPDATE land SET area = %s, location = %s, soil_type = %s, farmer_id = %s WHERE land_id = %s",
+                (data['area'], data.get('location', ''), data.get('soil_type'), data['farmer_id'], land_id)
             )
             conn.commit()
             cursor.close()
@@ -628,6 +638,83 @@ def modify_expense(expense_id):
         return jsonify({"error": str(e)}), 500
 
 
+# ─── Activity / Chemical Usage Routes ────────────────────
+
+@app.route('/api/activities', methods=['GET', 'POST'])
+def handle_activities():
+    try:
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+
+        if request.method == 'POST':
+            data = request.json
+            aid = gen_id('A', 'activity')
+            cursor.execute(
+                "INSERT INTO activity (activity_id, crop_id, land_id, chemical_name, quantity, activity_date) VALUES (%s, %s, %s, %s, %s, %s)",
+                (aid, data['crop_id'], data.get('land_id'), data['chemical_name'], data['quantity'], data.get('activity_date'))
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"id": aid, "message": "Activity added"}), 201
+        else:
+            query = """
+                SELECT a.*, c.crop_name, c.season, l.area as land_area, l.location as land_location
+                FROM activity a
+                LEFT JOIN crop c ON a.crop_id = c.crop_id
+                LEFT JOIN land l ON a.land_id = l.land_id
+            """
+            params = []
+            filters = []
+            crop_id = request.args.get('crop_id')
+            if crop_id:
+                filters.append("a.crop_id = %s")
+                params.append(crop_id)
+            chemical = request.args.get('chemical_name')
+            if chemical:
+                filters.append("a.chemical_name LIKE %s")
+                params.append(f"%{chemical}%")
+            if filters:
+                query += " WHERE " + " AND ".join(filters)
+            query += get_sort_clause('activity', prefix='a')
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            for r in rows:
+                r['created_at'] = str(r['created_at'])
+                if r.get('activity_date'):
+                    r['activity_date'] = str(r['activity_date'])
+            cursor.close()
+            conn.close()
+            return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/activities/<activity_id>', methods=['PUT', 'DELETE'])
+def modify_activity(activity_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM activity WHERE activity_id = %s", (activity_id,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Activity deleted"}), 200
+        else:
+            data = request.json
+            cursor.execute(
+                "UPDATE activity SET crop_id = %s, land_id = %s, chemical_name = %s, quantity = %s, activity_date = %s WHERE activity_id = %s",
+                (data['crop_id'], data.get('land_id'), data['chemical_name'], data['quantity'], data.get('activity_date'), activity_id)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Activity updated"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─── Harvest Routes ──────────────────────────────────────
 
 @app.route('/api/harvests', methods=['GET', 'POST'])
@@ -640,8 +727,8 @@ def handle_harvests():
             data = request.json
             hid = gen_id('H', 'harvest')
             cursor.execute(
-                "INSERT INTO harvest (harvest_id, crop_id, yield_amount, profit, harvest_date) VALUES (%s, %s, %s, %s, %s)",
-                (hid, data['crop_id'], data['yield_amount'], data.get('profit', 0), data.get('harvest_date'))
+                "INSERT INTO harvest (harvest_id, crop_id, yield_amount, total_cost, profit, harvest_date) VALUES (%s, %s, %s, %s, %s, %s)",
+                (hid, data['crop_id'], data['yield_amount'], data.get('total_cost', 0), data.get('profit', 0), data.get('harvest_date'))
             )
             conn.commit()
             cursor.close()
@@ -669,8 +756,10 @@ def handle_harvests():
             cursor.execute(query, params)
             rows = cursor.fetchall()
             for r in rows:
-                if r.get('profit'):
+                if r.get('profit') is not None:
                     r['profit'] = float(r['profit'])
+                if r.get('total_cost') is not None:
+                    r['total_cost'] = float(r['total_cost'])
                 r['created_at'] = str(r['created_at'])
                 if r.get('harvest_date'):
                     r['harvest_date'] = str(r['harvest_date'])
@@ -695,8 +784,8 @@ def modify_harvest(harvest_id):
         else:
             data = request.json
             cursor.execute(
-                "UPDATE harvest SET crop_id = %s, yield_amount = %s, profit = %s, harvest_date = %s WHERE harvest_id = %s",
-                (data['crop_id'], data['yield_amount'], data.get('profit', 0), data.get('harvest_date'), harvest_id)
+                "UPDATE harvest SET crop_id = %s, yield_amount = %s, total_cost = %s, profit = %s, harvest_date = %s WHERE harvest_id = %s",
+                (data['crop_id'], data['yield_amount'], data.get('total_cost', 0), data.get('profit', 0), data.get('harvest_date'), harvest_id)
             )
             conn.commit()
             cursor.close()
@@ -801,6 +890,544 @@ def get_audit_log():
         cursor.close()
         conn.close()
         return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Fertilizer Dosage Routes ────────────────────────────
+
+@app.route('/api/fertilizer-dosages', methods=['GET', 'POST'])
+def handle_fertilizer_dosages():
+    try:
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+
+        if request.method == 'POST':
+            data = request.json
+            did = gen_id('FD', 'fertilizer_dosage')
+            cursor.execute(
+                "INSERT INTO fertilizer_dosage (dosage_id, crop_id, fertilizer_name, quantity, application_stage, notes) VALUES (%s, %s, %s, %s, %s, %s)",
+                (did, data['crop_id'], data['fertilizer_name'], data['quantity'], data.get('application_stage', ''), data.get('notes', ''))
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"id": did, "message": "Fertilizer dosage added"}), 201
+        else:
+            query = """
+                SELECT fd.*, c.crop_name, c.season
+                FROM fertilizer_dosage fd
+                LEFT JOIN crop c ON fd.crop_id = c.crop_id
+            """
+            params = []
+            filters = []
+            crop_id = request.args.get('crop_id')
+            if crop_id:
+                filters.append("fd.crop_id = %s")
+                params.append(crop_id)
+            search = request.args.get('search')
+            if search:
+                filters.append("fd.fertilizer_name LIKE %s")
+                params.append(f"%{search}%")
+            if filters:
+                query += " WHERE " + " AND ".join(filters)
+            query += get_sort_clause('fertilizer_dosage', prefix='fd')
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            for r in rows:
+                r['created_at'] = str(r['created_at'])
+            cursor.close()
+            conn.close()
+            return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/fertilizer-dosages/<dosage_id>', methods=['PUT', 'DELETE'])
+def modify_fertilizer_dosage(dosage_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM fertilizer_dosage WHERE dosage_id = %s", (dosage_id,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Fertilizer dosage deleted"}), 200
+        else:
+            data = request.json
+            cursor.execute(
+                "UPDATE fertilizer_dosage SET crop_id = %s, fertilizer_name = %s, quantity = %s, application_stage = %s, notes = %s WHERE dosage_id = %s",
+                (data['crop_id'], data['fertilizer_name'], data['quantity'], data.get('application_stage', ''), data.get('notes', ''), dosage_id)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Fertilizer dosage updated"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Exporter / Market Routes ────────────────────────────
+
+@app.route('/api/exporters', methods=['GET', 'POST'])
+def handle_exporters():
+    try:
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+
+        if request.method == 'POST':
+            data = request.json
+            eid = gen_id('EX', 'exporter')
+            cursor.execute(
+                "INSERT INTO exporter (exporter_id, exporter_name, exporter_type, crop_product, current_rate, rate_unit, location, distance_km, contact) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (eid, data['exporter_name'], data.get('exporter_type', ''), data.get('crop_product', ''),
+                 data.get('current_rate', 0), data.get('rate_unit', 'per quintal'),
+                 data.get('location', ''), data.get('distance_km', 0), data.get('contact', ''))
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"id": eid, "message": "Exporter added"}), 201
+        else:
+            query = "SELECT * FROM exporter"
+            params = []
+            filters = []
+            crop_product = request.args.get('crop_product')
+            if crop_product:
+                filters.append("crop_product LIKE %s")
+                params.append(f"%{crop_product}%")
+            exporter_type = request.args.get('exporter_type')
+            if exporter_type:
+                filters.append("exporter_type = %s")
+                params.append(exporter_type)
+            if filters:
+                query += " WHERE " + " AND ".join(filters)
+            query += get_sort_clause('exporter')
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            for r in rows:
+                if r.get('current_rate') is not None:
+                    r['current_rate'] = float(r['current_rate'])
+                if r.get('distance_km') is not None:
+                    r['distance_km'] = float(r['distance_km'])
+                r['created_at'] = str(r['created_at'])
+            cursor.close()
+            conn.close()
+            return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/exporters/<exporter_id>', methods=['PUT', 'DELETE'])
+def modify_exporter(exporter_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM exporter WHERE exporter_id = %s", (exporter_id,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Exporter deleted"}), 200
+        else:
+            data = request.json
+            cursor.execute(
+                "UPDATE exporter SET exporter_name = %s, exporter_type = %s, crop_product = %s, current_rate = %s, rate_unit = %s, location = %s, distance_km = %s, contact = %s WHERE exporter_id = %s",
+                (data['exporter_name'], data.get('exporter_type', ''), data.get('crop_product', ''),
+                 data.get('current_rate', 0), data.get('rate_unit', 'per quintal'),
+                 data.get('location', ''), data.get('distance_km', 0), data.get('contact', ''), exporter_id)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Exporter updated"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Soil Report Routes ─────────────────────────────────
+
+@app.route('/api/soil-reports', methods=['GET', 'POST'])
+def handle_soil_reports():
+    try:
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+
+        if request.method == 'POST':
+            data = request.json
+            rid = gen_id('SR', 'soil_report')
+            cursor.execute(
+                "INSERT INTO soil_report (report_id, land_id, ph_level, nitrogen, phosphorus, potassium, organic_carbon, report_date, notes) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (rid, data['land_id'], data.get('ph_level'), data.get('nitrogen'), data.get('phosphorus'),
+                 data.get('potassium'), data.get('organic_carbon'), data.get('report_date'), data.get('notes', ''))
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"id": rid, "message": "Soil report added"}), 201
+        else:
+            query = """
+                SELECT sr.*, l.area as land_area, l.location as land_location, f.name as farmer_name
+                FROM soil_report sr
+                LEFT JOIN land l ON sr.land_id = l.land_id
+                LEFT JOIN farmer f ON l.farmer_id = f.farmer_id
+            """
+            params = []
+            filters = []
+            land_id = request.args.get('land_id')
+            if land_id:
+                filters.append("sr.land_id = %s")
+                params.append(land_id)
+            if filters:
+                query += " WHERE " + " AND ".join(filters)
+            query += get_sort_clause('soil_report', prefix='sr')
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            for r in rows:
+                for key in ['ph_level', 'nitrogen', 'phosphorus', 'potassium', 'organic_carbon']:
+                    if r.get(key) is not None:
+                        r[key] = float(r[key])
+                r['created_at'] = str(r['created_at'])
+                if r.get('report_date'):
+                    r['report_date'] = str(r['report_date'])
+            cursor.close()
+            conn.close()
+            return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/soil-reports/<report_id>', methods=['PUT', 'DELETE'])
+def modify_soil_report(report_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM soil_report WHERE report_id = %s", (report_id,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Soil report deleted"}), 200
+        else:
+            data = request.json
+            cursor.execute(
+                "UPDATE soil_report SET land_id = %s, ph_level = %s, nitrogen = %s, phosphorus = %s, potassium = %s, organic_carbon = %s, report_date = %s, notes = %s WHERE report_id = %s",
+                (data['land_id'], data.get('ph_level'), data.get('nitrogen'), data.get('phosphorus'),
+                 data.get('potassium'), data.get('organic_carbon'), data.get('report_date'), data.get('notes', ''), report_id)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Soil report updated"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Notification Routes ────────────────────────────────
+
+@app.route('/api/notifications', methods=['GET', 'POST'])
+def handle_notifications():
+    try:
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+
+        if request.method == 'POST':
+            data = request.json
+            cursor.execute(
+                "INSERT INTO notification (crop_id, title, message, notify_date) VALUES (%s, %s, %s, %s)",
+                (data.get('crop_id'), data['title'], data['message'], data['notify_date'])
+            )
+            conn.commit()
+            nid = cursor.lastrowid
+            cursor.close()
+            conn.close()
+            return jsonify({"id": nid, "message": "Notification created"}), 201
+        else:
+            query = """
+                SELECT n.*, c.crop_name, c.season
+                FROM notification n
+                LEFT JOIN crop c ON n.crop_id = c.crop_id
+            """
+            params = []
+            filters = []
+            is_read = request.args.get('is_read')
+            if is_read is not None:
+                filters.append("n.is_read = %s")
+                params.append(is_read == 'true')
+            crop_id = request.args.get('crop_id')
+            if crop_id:
+                filters.append("n.crop_id = %s")
+                params.append(crop_id)
+            if filters:
+                query += " WHERE " + " AND ".join(filters)
+            query += " ORDER BY n.notify_date ASC, n.created_at DESC"
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            for r in rows:
+                r['notify_date'] = str(r['notify_date'])
+                r['created_at'] = str(r['created_at'])
+                r['is_read'] = bool(r['is_read'])
+            cursor.close()
+            conn.close()
+            return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['PUT'])
+def mark_notification_read(notification_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notification SET is_read = TRUE WHERE notification_id = %s", (notification_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"message": "Notification marked as read"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/notifications/<int:notification_id>', methods=['DELETE'])
+def delete_notification(notification_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM notification WHERE notification_id = %s", (notification_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"message": "Notification deleted"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/notifications/unread-count')
+def unread_notification_count():
+    try:
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT COUNT(*) as count FROM notification WHERE is_read = FALSE")
+        count = cursor.fetchone()['count']
+        cursor.close()
+        conn.close()
+        return jsonify({"count": count}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Smart Suggestion Routes ────────────────────────────
+
+SOIL_CROP_MAP = {
+    'Black Soil': ['Cotton', 'Sugarcane', 'Wheat', 'Jowar', 'Sunflower', 'Soybean'],
+    'Alluvial Soil': ['Rice', 'Wheat', 'Sugarcane', 'Maize', 'Pulses', 'Vegetables'],
+    'Red Soil': ['Groundnut', 'Millets', 'Tobacco', 'Pulses', 'Potato', 'Tomato'],
+    'Laterite Soil': ['Tea', 'Coffee', 'Cashew', 'Rubber', 'Coconut'],
+    'Sandy Soil': ['Watermelon', 'Groundnut', 'Jowar', 'Bajra', 'Cucumber'],
+    'Clayey Soil': ['Rice', 'Wheat', 'Cabbage', 'Lettuce', 'Broccoli'],
+}
+
+FERTILITY_SUGGESTIONS = {
+    'Black Soil': {
+        'organic': ['Apply compost (5-10 tonnes/hectare)', 'Use poultry waste manure', 'Green manuring with dhaincha/sunhemp', 'Vermicompost application'],
+        'chemical': ['Apply Gypsum to improve drainage', 'Zinc Sulphate (25 kg/ha) for zinc deficiency', 'Balanced NPK fertilizers'],
+        'tips': ['Avoid waterlogging', 'Deep ploughing in summer improves structure']
+    },
+    'Alluvial Soil': {
+        'organic': ['Cow dung manure (10 tonnes/hectare)', 'Compost from crop residues', 'Bio-fertilizers (Rhizobium, Azotobacter)'],
+        'chemical': ['Urea for nitrogen boost', 'Single Super Phosphate (SSP)', 'Potash based on soil test'],
+        'tips': ['Already fertile — maintain with crop rotation', 'Avoid over-irrigation']
+    },
+    'Red Soil': {
+        'organic': ['Heavy compost application', 'Poultry waste (2-3 tonnes/hectare)', 'Farmyard manure', 'Mulching to retain moisture'],
+        'chemical': ['Lime application to correct acidity', 'Phosphorus-rich fertilizers (DAP)', 'Micronutrients (Iron, Manganese)'],
+        'tips': ['Add organic matter regularly', 'Needs irrigation due to low water holding capacity']
+    },
+    'Laterite Soil': {
+        'organic': ['Heavy organic manure application', 'Green manure crops', 'Composted leaves and plant waste'],
+        'chemical': ['Lime to reduce acidity', 'NPK fertilizers in higher doses', 'Boron and Molybdenum supplements'],
+        'tips': ['Very poor in nutrients — needs heavy fertilization', 'Terrace farming helps prevent erosion']
+    },
+    'Sandy Soil': {
+        'organic': ['Cow dung (15 tonnes/hectare)', 'Poultry waste mixed with soil', 'Vermicompost to improve water retention', 'Biochar application'],
+        'chemical': ['Frequent small doses of Urea', 'Calcium Ammonium Nitrate', 'Split fertilizer application recommended'],
+        'tips': ['Water drains fast — use drip irrigation', 'Mulching is critical for moisture']
+    },
+    'Clayey Soil': {
+        'organic': ['Add sand + organic matter to improve texture', 'Compost to improve drainage', 'Gypsum application'],
+        'chemical': ['Balanced NPK', 'Avoid excess nitrogen — causes compaction', 'Potassium-rich fertilizers'],
+        'tips': ['Avoid working when wet', 'Raised beds improve drainage']
+    },
+}
+
+DISEASE_PESTICIDE_MAP = {
+    'Wheat': {
+        'Rust (Yellow/Brown)': {'chemical': 'Propiconazole 25% EC (1ml/L water)', 'organic': 'Neem oil spray or Baking soda solution'},
+        'Powdery Mildew': {'chemical': 'Sulfur 80% WDG (2g/L water)', 'organic': 'Milk spray (1 part milk to 9 parts water)'},
+        'Aphids': {'chemical': 'Imidacloprid 17.8% SL (0.5ml/L water)', 'organic': 'Neem seed kernel extract (NSKE 5%)'}
+    },
+    'Cotton': {
+        'Bollworm': {'chemical': 'Spinosad 45% SC (0.3ml/L water)', 'organic': 'Bacillus thuringiensis (Bt) sprays, Trichogramma cards'},
+        'Whitefly': {'chemical': 'Diafenthiuron 50% WP (1g/L water)', 'organic': 'Yellow sticky traps, Neem oil'},
+        'Leaf Curl Virus': {'chemical': 'Control vectors (Whiteflies) with Imidacloprid', 'organic': 'Remove infected plants immediately'}
+    },
+    'Sugarcane': {
+        'Red Rot': {'chemical': 'Carbendazim 50% WP seed treatment', 'organic': 'Use disease-free setts, crop rotation'},
+        'Shoot Borer': {'chemical': 'Chlorantraniliprole 18.5% SC', 'organic': 'Trichogramma chilonis egg parasitoids'}
+    },
+    'Rice': {
+        'Blast': {'chemical': 'Tricyclazole 75% WP (0.6g/L water)', 'organic': 'Pseudomonas fluorescens (10g/L spray)'},
+        'Stem Borer': {'chemical': 'Cartap Hydrochloride 4G (10kg/acre)', 'organic': 'Pheromone traps (8/acre)'}
+    }
+}
+
+CROP_PROCESS_SOP = {
+    'Wheat': [
+        {'step': 1, 'title': 'Land Preparation', 'desc': 'Plough the field 2-3 times to achieve a fine tilth. Add well-rotted FYM (Farm Yard Manure).'},
+        {'step': 2, 'title': 'Seed Treatment', 'desc': 'Treat seeds with Carboxin + Thiram (2g/kg) to prevent soil-borne diseases.'},
+        {'step': 3, 'title': 'Sowing', 'desc': 'Sow during early November. Maintain a depth of 3-5 cm. Line sowing is preferred.'},
+        {'step': 4, 'title': 'Irrigation & Fertilizer', 'desc': 'Apply 1st irrigation at Crown Root Initiation (CRI) stage (20-25 days). Top dress with Urea.'},
+        {'step': 5, 'title': 'Harvesting', 'desc': 'Harvest when grains become hard and moisture drops to 20%. Typical harvest is April.'}
+    ],
+    'Cotton': [
+        {'step': 1, 'title': 'Deep Ploughing', 'desc': 'Deep ploughing in summer destroys overwintering pests like bollworms.'},
+        {'step': 2, 'title': 'Sowing', 'desc': 'Sow after the onset of monsoon (June-July). Maintain proper spacing (e.g. 90x60 cm).'},
+        {'step': 3, 'title': 'Nutrient Management', 'desc': 'Apply NPK as a basal dose. Spray 2% DAP at square formation and boll development.'},
+        {'step': 4, 'title': 'Pest Management', 'desc': 'Install pheromone traps for pink bollworm early in the season.'},
+        {'step': 5, 'title': 'Picking', 'desc': 'Pick fully opened bolls in the morning. Avoid contamination with dry leaves.'}
+    ],
+    'Sugarcane': [
+        {'step': 1, 'title': 'Field Preparation', 'desc': 'Requires deep tillage (50-60 cm) using a subsoiler to break hardpan.'},
+        {'step': 2, 'title': 'Sett Treatment', 'desc': 'Dip setts in Carbendazim solution for 15 mins before planting.'},
+        {'step': 3, 'title': 'Planting', 'desc': 'Use the trench or ridge-and-furrow method for better water management and to prevent lodging.'},
+        {'step': 4, 'title': 'Earthing Up & Tying', 'desc': 'Perform partial earthing up at 3 months and full earthing up at 4-5 months. Tie canes to prevent lodging.'},
+        {'step': 5, 'title': 'Harvesting', 'desc': 'Harvest near the ground level using a sharp cane-cutting knife when Brix reading reaches 18-20.'}
+    ],
+    'Rice': [
+        {'step': 1, 'title': 'Nursery Preparation', 'desc': 'Prepare a wet or dry nursery 25-30 days before transplanting.'},
+        {'step': 2, 'title': 'Puddling', 'desc': 'Puddle the main field 2-3 times and level it to reduce water percolation.'},
+        {'step': 3, 'title': 'Transplanting', 'desc': 'Transplant 2-3 seedlings per hill at a shallow depth (2-3 cm).'},
+        {'step': 4, 'title': 'Water Management', 'desc': 'Maintain 2-5 cm of water during the tillering and flowering stages. Drain 10 days before harvest.'},
+        {'step': 5, 'title': 'Harvesting', 'desc': 'Harvest when 80% of the panicles turn straw-colored.'}
+    ]
+}
+
+
+@app.route('/api/suggestions/crops-by-soil')
+def suggest_crops_by_soil():
+    soil_type = request.args.get('soil_type', '')
+    crops = SOIL_CROP_MAP.get(soil_type, [])
+    return jsonify({"soil_type": soil_type, "recommended_crops": crops}), 200
+
+
+@app.route('/api/suggestions/fertility')
+def suggest_fertility():
+    soil_type = request.args.get('soil_type', '')
+    suggestions = FERTILITY_SUGGESTIONS.get(soil_type, {})
+    return jsonify({"soil_type": soil_type, "suggestions": suggestions}), 200
+
+
+@app.route('/api/recommendations')
+def data_recommendations():
+    """Recommend best crops based on past harvest profit data."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT c.crop_id, c.crop_name, c.season,
+                   COUNT(h.harvest_id) as harvest_count,
+                   COALESCE(AVG(h.profit), 0) as avg_profit,
+                   COALESCE(SUM(h.profit), 0) as total_profit,
+                   COALESCE(AVG(h.total_cost), 0) as avg_cost
+            FROM crop c
+            LEFT JOIN harvest h ON c.crop_id = h.crop_id
+            GROUP BY c.crop_id, c.crop_name, c.season
+            HAVING harvest_count > 0
+            ORDER BY avg_profit DESC
+        """)
+        rows = cursor.fetchall()
+        for r in rows:
+            r['avg_profit'] = float(r['avg_profit'])
+            r['total_profit'] = float(r['total_profit'])
+            r['avg_cost'] = float(r['avg_cost'])
+        cursor.close()
+        conn.close()
+        return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/guide/disease', methods=['GET'])
+def get_disease_guide():
+    return jsonify(DISEASE_PESTICIDE_MAP), 200
+
+@app.route('/api/guide/process', methods=['GET'])
+def get_process_guide():
+    return jsonify(CROP_PROCESS_SOP), 200
+
+
+@app.route('/api/smart-suggestions/<farmer_id>')
+def farmer_smart_suggestions(farmer_id):
+    """Suggest best crop based on overall profit data and the specific farmer's soil type."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+        
+        # 1. Get farmer's lands and soil types
+        cursor.execute("SELECT soil_type FROM land WHERE farmer_id = %s AND soil_type IS NOT NULL", (farmer_id,))
+        lands = cursor.fetchall()
+        soil_types = [l['soil_type'] for l in lands if l['soil_type']]
+        
+        # 2. Get most profitable crops based on expenses history (ROI)
+        cursor.execute("""
+            SELECT c.crop_name, 
+                   SUM(h.total_cost) as total_cost,
+                   SUM(h.profit) as total_profit,
+                   (SUM(h.profit) / NULLIF(SUM(h.total_cost), 1)) * 100 as roi_percentage
+            FROM harvest h
+            JOIN crop c ON h.crop_id = c.crop_id
+            GROUP BY c.crop_name
+            ORDER BY roi_percentage DESC
+        """)
+        profitable_crops = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+
+        basis = ""
+        recommended_crop = ""
+
+        if not soil_types:
+            recommended_crop = profitable_crops[0]['crop_name'] if profitable_crops else "Wheat"
+            basis = "Please update your land records with soil types for personalized suggestions. Based on historical expenses and profit data, this is currently the most efficient crop."
+        else:
+            soil = soil_types[0]
+            suitable_crops = SOIL_CROP_MAP.get(soil, ["Mixed Crops"])
+            
+            # Find the highest ROI crop that is also suitable for this soil
+            best_match = None
+            for pc in profitable_crops:
+                if pc['crop_name'] in suitable_crops:
+                    best_match = pc
+                    break
+            
+            if best_match:
+                recommended_crop = best_match['crop_name']
+                roi = float(best_match['roi_percentage'] or 0)
+                profit_str = f"₹{best_match['total_profit']:,.2f}"
+                cost_str = f"₹{best_match['total_cost']:,.2f}"
+                basis = f"Based on your {soil}, {recommended_crop} is highly recommended. Analysis of historical crop expenses (Cost: {cost_str}) vs Profit ({profit_str}) shows it yields the highest Return on Investment ({roi:.1f}%) for this soil type."
+            else:
+                recommended_crop = suitable_crops[0]
+                basis = f"Based on your {soil}, we recommend sowing {recommended_crop} as it thrives in this soil type."
+            
+        return jsonify({
+            "farmer_id": farmer_id,
+            "recommended_crop": recommended_crop,
+            "basis": basis
+        }), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
