@@ -2,6 +2,8 @@
 
 A full-stack **Farmer Vendor Management System** built as a DBMS miniproject. Manage farming operations, land records, crops, products, sales, expenses, and harvests — all in one place.
 
+(UPDATE! -- Suggestion system to the Farmers will be added soon.)
+
 ![Dashboard](https://img.shields.io/badge/Dashboard-8_Stats-green) ![CRUD](https://img.shields.io/badge/CRUD-7_Entities-blue) ![Languages](https://img.shields.io/badge/Languages-EN_|_HI_|_MR-orange)
 
 ---
