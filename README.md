@@ -1,4 +1,4 @@
-# 🌾 FarmVendor — Farmer Vendor Management System
+# 🌾 FarmVendor — Farmer Vendor Management System (FOR DESKTOP & MOBILE BOTH) 
 
 A full-stack **Farmer Vendor Management System** built as a DBMS miniproject. Manage farming operations, land records, crops, products, sales, expenses, and harvests — all in one place.
 
